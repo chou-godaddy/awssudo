@@ -1,14 +1,14 @@
 #!/bin/bash
 
 # 1. connect as ops using OKTA
-OKTA_DOMAIN=godaddy.okta.com; KEY=$(openssl rand -hex 18); USER=''; PASS=''; eval $(aws-okta-processor authenticate -e -o $OKTA_DOMAIN -u $USER -p $PASS -k $KEY);
+OKTA_DOMAIN=godaddy.okta.com; KEY=$(openssl rand -hex 18); eval $(aws-okta-processor authenticate -e -o $OKTA_DOMAIN -u $LOGNAME -k $KEY)
+ACCOUNT_ID=$(aws sts get-caller-identity | jq -r .Account)
 
 # 2. look in secrets manager and record access key id and secret access key for deploy user
 printf "\nGetting credentials for deploy user...\n"
 SECERT_LIST=$(aws secretsmanager list-secrets --filters Key=name,Values=/Secrets/IAMUser/GD-AWS-DeployUser)
 echo "\nSECERT_LIST ${SECERT_LIST} \n"
-
-SECRET_ID=$(aws secretsmanager list-secrets --filters Key=name,Values=/Secrets/IAMUser/GD-AWS-DeployUser | jq -r .SecretList[0].Name)
+SECRET_ID=$(aws secretsmanager list-secrets --filters Key=description,Values=GD-AWS-DeployUser | jq -r .SecretList[0].Name)
 echo "SECRET_ID ${SECRET_ID} \n"
 
 # echo "${SECRET_ID}" | jq -c
@@ -26,19 +26,18 @@ SECRET_STRING=$( \
 echo "SECRET_STRING ${SECRET_STRING} \n"
 
 NEW_AWS_ACCESS_KEY_ID=$(echo "${SECRET_STRING}" | jq -r .AccessKeyId)
-echo "NEW_AWS_ACCESS_KEY_ID ${NEW_AWS_ACCESS_KEY_ID} \n"
 NEW_AWS_SECRET_ACCESS_KEY=$(echo "${SECRET_STRING}" | jq -r .SecretAccessKey)
-echo "NEW_AWS_SECRET_ACCESS_KEY ${NEW_AWS_SECRET_ACCESS_KEY} \n"
 
 # 3. look in parameter store to get the ARN of the deploy role
 PARAMETER_NAME='/AdminParams/IAM/DeployRoleArn'
 ROLE_ARN=$(aws ssm get-parameter --name "${PARAMETER_NAME}" | jq -r .Parameter.Value)
-echo "Assuming role ${ROLE_ARN} \n"
+echo "Assuming role ${ROLE_ARN}"
 
 # 4. export access key id and secret access key from secrets manager and unset session token
 export AWS_ACCESS_KEY_ID=$NEW_AWS_ACCESS_KEY_ID
 export AWS_SECRET_ACCESS_KEY=$NEW_AWS_SECRET_ACCESS_KEY
 unset AWS_SESSION_TOKEN
+
 # 5: assume the role that we pulled from parameter store
 printf "Getting credentials for assuming deploy role...\n"
 ASSUMED_CREDS=$( \
